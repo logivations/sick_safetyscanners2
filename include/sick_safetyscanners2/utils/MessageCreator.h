@@ -62,11 +62,12 @@ public:
    * \param range_max The maximum range for the sensor
    * \param angle_offset The offset added to the angle
    * \param min_intensities Threshold to filter too low intensities
+   * \param publish_intensities Whether to fill the LaserScan intensities array
    */
   MessageCreator(std::string frame_id, double time_offset, double range_min,
                  double range_max,
                  float angle_offset, // TODO still needed?
-                 double min_intensities);
+                 double min_intensities, bool publish_intensities = true);
 
   /*!
    * \brief Creates a Laserscan message from the parsed data.
@@ -119,6 +120,7 @@ private:
   double m_range_max;
   float m_angle_offset;
   double m_min_intensities = 0.0; /*!< min intensities for laser points */
+  bool m_publish_intensities = true; /*!< fill the LaserScan intensities array */
 
   // Calculation to get the median point of a reflector
   std::vector<bool> getMedianReflectors(

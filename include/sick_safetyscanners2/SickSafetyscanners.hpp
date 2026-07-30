@@ -66,7 +66,7 @@ public:
     void setupMsgCreator() {
       m_msg_creator = std::make_unique<sick::MessageCreator>(
           m_frame_id, m_time_offset, m_range_min, m_range_max, m_angle_offset,
-          m_min_intensities);
+          m_min_intensities, m_publish_intensities);
     }
 
     boost::asio::ip::address_v4 m_sensor_ip;
@@ -80,6 +80,7 @@ public:
     double m_timestamp_min_acceptable = -1.0;
     double m_timestamp_max_acceptable = 1.0;
     double m_min_intensities = 0.0; /*!< min intensities for laser points */
+    bool m_publish_intensities = true; /*!< fill the LaserScan intensities */
     bool m_use_sick_angles;
     float m_angle_offset = -90.0;
     bool m_use_pers_conf = false;
@@ -125,6 +126,7 @@ public:
     node.template declare_parameter<bool>("application_io_data", true);
     node.template declare_parameter<bool>("use_persistent_config", false);
     node.template declare_parameter<float>("min_intensities", 0.f);
+    node.template declare_parameter<bool>("publish_intensities", true);
 
     node.template declare_parameter<double>("expected_frequency", 34);
     node.template declare_parameter<double>("frequency_tolerance", 0.1);
@@ -248,6 +250,11 @@ public:
     node.template get_parameter<double>("min_intensities",
                                         m_config.m_min_intensities);
     RCLCPP_INFO(getLogger(), "min_intensities: %f", m_config.m_min_intensities);
+
+    node.template get_parameter<bool>("publish_intensities",
+                                      m_config.m_publish_intensities);
+    RCLCPP_INFO(getLogger(), "publish_intensities: %s",
+                btoa(m_config.m_publish_intensities).c_str());
 
     node.template get_parameter<double>("expected_frequency",
                                         m_config.m_expected_frequency);

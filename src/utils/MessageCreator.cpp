@@ -38,10 +38,12 @@ namespace sick {
 
 MessageCreator::MessageCreator(std::string frame_id, double time_offset,
                                double range_min, double range_max,
-                               float angle_offset, double min_intensities)
+                               float angle_offset, double min_intensities,
+                               bool publish_intensities)
     : m_frame_id(frame_id), m_time_offset(time_offset), m_range_min(range_min),
       m_range_max(range_max), m_angle_offset(angle_offset),
-      m_min_intensities(min_intensities) {}
+      m_min_intensities(min_intensities),
+      m_publish_intensities(publish_intensities) {}
 
 std::unique_ptr<sensor_msgs::msg::LaserScan>
 MessageCreator::createLaserScanMsg(const sick::datastructure::Data &data,
@@ -71,7 +73,9 @@ MessageCreator::createLaserScanMsg(const sick::datastructure::Data &data,
   scan->range_min = m_range_min;
   scan->range_max = m_range_max;
   scan->ranges.resize(num_scan_points);
-  scan->intensities.resize(num_scan_points);
+  // An empty intensities array is valid per the LaserScan message definition;
+  // leaving it out halves the serialized message.
+  scan->intensities.resize(m_publish_intensities ? num_scan_points : 0);
 
   for (uint32_t i = 0; i < num_scan_points; ++i) {
     const sick::datastructure::ScanPoint scan_point = scan_points.at(i);
@@ -88,7 +92,9 @@ MessageCreator::createLaserScanMsg(const sick::datastructure::Data &data,
     } else {
       scan->ranges[i] = std::numeric_limits<double>::infinity();
     }
-    scan->intensities[i] = static_cast<float>(scan_point.getReflectivity());
+    if (m_publish_intensities) {
+      scan->intensities[i] = static_cast<float>(scan_point.getReflectivity());
+    }
   }
 
   return scan;

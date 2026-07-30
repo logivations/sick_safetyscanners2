@@ -107,6 +107,8 @@ rcl_interfaces::msg::SetParametersResult SickSafetyscanners::parametersCallback(
       update_sensor_config = true;
     } else if (param.get_name() == "min_intensities") {
       m_config.m_min_intensities = param.as_double();
+    } else if (param.get_name() == "publish_intensities") {
+      m_config.m_publish_intensities = param.as_bool();
     } else {
       throw std::runtime_error("Parameter is not dynamic reconfigurable");
     }
