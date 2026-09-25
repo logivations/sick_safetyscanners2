@@ -49,6 +49,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <string>
 
 #include "./SickSafetyscanners.hpp"
@@ -82,6 +84,21 @@ private:
 
   // Callback function passed to the device for handling the received packages
   void receiveUDPPaket(const sick::datastructure::Data &data);
+
+  // Reconnect watchdog. The UDP data output configured via CoLa2 at startup
+  // is volatile on the sensor: after a sensor reboot or firmware flash the
+  // sensor stops sending until it is configured again, so without this the
+  // node stays silent until it is restarted.
+  rclcpp::TimerBase::SharedPtr m_reconnect_timer;
+  std::chrono::steady_clock::duration m_reconnect_timeout;
+  // steady_clock time of the last UDP telegram (or connection attempt)
+  std::atomic<std::chrono::steady_clock::rep> m_last_data_time{0};
+
+  void touchLastDataTime();
+  // (Re)creates the device, reads the sensor info and configures the UDP
+  // data output. Returns false (device reset) if the sensor is unreachable.
+  bool connectSensor();
+  void checkConnection();
 };
 } // namespace sick
 

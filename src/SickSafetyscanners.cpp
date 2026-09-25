@@ -114,7 +114,7 @@ rcl_interfaces::msg::SetParametersResult SickSafetyscanners::parametersCallback(
     }
   }
 
-  if (update_sensor_config) {
+  if (update_sensor_config && m_device) {
     m_device->changeSensorSettings(m_config.m_communications_settings);
   }
 
@@ -151,7 +151,9 @@ void SickSafetyscanners::setupCommunication(
 }
 
 void SickSafetyscanners::stopCommunication() {
-  m_device->stop();
+  if (m_device) {
+    m_device->stop();
+  }
   m_diagnosed_laser_scan_publisher.reset();
   m_diagnostic_updater.reset();
 }
@@ -241,6 +243,9 @@ bool SickSafetyscanners::getFieldData(
         response) {
   // Suppress warning of unused request variable due to empty request fields
   (void)request;
+  if (!m_device) {
+    return false;
+  }
 
   std::vector<sick::datastructure::FieldData> fields;
   m_device->requestFieldData(fields);
@@ -294,6 +299,9 @@ bool SickSafetyscanners::getStatusOverview(
         sick_safetyscanners2_interfaces::srv::StatusOverview::Response>
         response) {
   (void)request;
+  if (!m_device) {
+    return false;
+  }
 
   sick::datastructure::StatusOverview d;
   m_device->requestStatusOverview(d);

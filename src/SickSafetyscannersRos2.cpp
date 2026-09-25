@@ -43,6 +43,13 @@ SickSafetyscannersRos2::SickSafetyscannersRos2(const rclcpp::NodeOptions& option
   // read parameters!
   initializeParameters(*this);
   loadParameters(*this);
+  // not in initializeParameters: the lifecycle node has no reconnect watchdog
+  const double reconnect_timeout =
+      this->declare_parameter<double>("reconnect_timeout", 2.0);
+  RCLCPP_INFO(this->get_logger(), "reconnect_timeout: %f", reconnect_timeout);
+  m_reconnect_timeout = std::chrono::duration_cast<
+      std::chrono::steady_clock::duration>(
+      std::chrono::duration<double>(reconnect_timeout));
 
   // init publishers and services
   // set QOS profile for publishers explicitly
@@ -75,17 +82,83 @@ SickSafetyscannersRos2::SickSafetyscannersRos2(const rclcpp::NodeOptions& option
       std::bind(&SickSafetyscannersRos2::parametersCallback, this,
                 std::placeholders::_1));
 
-  setupCommunication(std::bind(&SickSafetyscannersRos2::receiveUDPPaket, this,
-                               std::placeholders::_1));
+  // Without the watchdog keep the upstream behaviour: an unreachable sensor
+  // fails the node construction.
+  if (reconnect_timeout > 0.0) {
+    connectSensor();
+  } else {
+    setupCommunication(std::bind(&SickSafetyscannersRos2::receiveUDPPaket,
+                                 this, std::placeholders::_1));
+  }
 
   startCommunication(this, m_laser_scan_publisher);
+  touchLastDataTime();
+
+  if (reconnect_timeout > 0.0) {
+    m_reconnect_timer = this->create_wall_timer(
+        std::chrono::seconds(1),
+        std::bind(&SickSafetyscannersRos2::checkConnection, this));
+  }
 
   RCLCPP_INFO(this->get_logger(), "Node Configured and running");
+}
+
+void SickSafetyscannersRos2::touchLastDataTime() {
+  m_last_data_time = std::chrono::steady_clock::now().time_since_epoch().count();
+}
+
+bool SickSafetyscannersRos2::connectSensor() {
+  try {
+    // Destroy the old device first: joins its IO thread (so no callback runs
+    // while the message creator is replaced) and drops a CoLa2 session that
+    // may be stuck on a socket of the rebooted sensor.
+    m_device.reset();
+    setupCommunication(std::bind(&SickSafetyscannersRos2::receiveUDPPaket,
+                                 this, std::placeholders::_1));
+    return true;
+  } catch (const std::exception &e) {
+    m_device.reset();
+    RCLCPP_WARN(get_logger(), "Could not connect to sensor %s: %s",
+                m_config.m_sensor_ip.to_string().c_str(), e.what());
+    return false;
+  }
+}
+
+void SickSafetyscannersRos2::checkConnection() {
+  const auto last_data = std::chrono::steady_clock::time_point(
+      std::chrono::steady_clock::duration(m_last_data_time.load()));
+  if (std::chrono::steady_clock::now() - last_data < m_reconnect_timeout) {
+    return;
+  }
+
+  RCLCPP_WARN(get_logger(),
+              "No data from sensor %s for %.1f s, reconnecting",
+              m_config.m_sensor_ip.to_string().c_str(),
+              std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                            last_data)
+                  .count());
+  // An attempt against a booting sensor can block for the CoLa2 timeouts;
+  // the next one starts reconnect_timeout after this one ended.
+  if (connectSensor()) {
+    try {
+      m_device->run();
+      m_device->changeSensorSettings(m_config.m_communications_settings);
+      RCLCPP_INFO(get_logger(), "Reconnected to sensor %s",
+                  m_config.m_sensor_ip.to_string().c_str());
+    } catch (const std::exception &e) {
+      m_device.reset();
+      RCLCPP_WARN(get_logger(), "Could not configure sensor %s: %s",
+                  m_config.m_sensor_ip.to_string().c_str(), e.what());
+    }
+  }
+  touchLastDataTime();
 }
 
 
 void SickSafetyscannersRos2::receiveUDPPaket(
     const sick::datastructure::Data &data) {
+  touchLastDataTime();
+
   if (!m_config.m_msg_creator) {
     RCLCPP_WARN(get_logger(), "Received UDPP packet before all objects were "
                               "instantiated, ignoring this packet.");

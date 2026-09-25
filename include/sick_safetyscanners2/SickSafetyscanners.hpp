@@ -323,9 +323,13 @@ public:
                               &SickSafetyscanners::sensorDiagnostics);
 
     // Start async receiving and processing of sensor data
-    RCLCPP_INFO(getLogger(), "Run");
-    m_device->run();
-    m_device->changeSensorSettings(m_config.m_communications_settings);
+    // No device when the sensor was unreachable during setupCommunication();
+    // the caller retries later (see SickSafetyscannersRos2::checkConnection).
+    if (m_device) {
+      RCLCPP_INFO(getLogger(), "Run");
+      m_device->run();
+      m_device->changeSensorSettings(m_config.m_communications_settings);
+    }
   }
 
   /**
