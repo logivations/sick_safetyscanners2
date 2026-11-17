@@ -167,14 +167,17 @@ void SickSafetyscannersLifeCycle::receiveUDPPaket(
 
   if (!data.getMeasurementDataPtr()->isEmpty() &&
       !data.getDerivedValuesPtr()->isEmpty()) {
+    // Every scan goes through the device time mapping, also while nobody
+    // subscribes, so the offset estimate is warm when a subscriber appears.
+    const rclcpp::Time stamp = scanStamp(data, this->now());
     if(m_diagnosed_laser_scan_publisher->getPublisher()->get_subscription_count() > 0){
-      auto scan = m_config.m_msg_creator->createLaserScanMsg(data, this->now());
+      auto scan = m_config.m_msg_creator->createLaserScanMsg(data, stamp);
       m_diagnosed_laser_scan_publisher->publish(std::move(scan));
     }
     
     if(m_extended_laser_scan_publisher->get_subscription_count() > 0){
       auto extended_scan =
-          m_config.m_msg_creator->createExtendedLaserScanMsg(data, this->now());
+          m_config.m_msg_creator->createExtendedLaserScanMsg(data, stamp);
       m_extended_laser_scan_publisher->publish(std::move(extended_scan));
     }
     if(m_output_paths_publisher->get_subscription_count() > 0){

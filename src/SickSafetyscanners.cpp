@@ -109,6 +109,13 @@ rcl_interfaces::msg::SetParametersResult SickSafetyscanners::parametersCallback(
       m_config.m_min_intensities = param.as_double();
     } else if (param.get_name() == "publish_intensities") {
       m_config.m_publish_intensities = param.as_bool();
+    } else if (param.get_name() == "use_device_time") {
+      m_config.m_use_device_time = param.as_bool();
+      resetDeviceTime();
+    } else if (param.get_name() == "device_time_window") {
+      m_config.m_device_time_window = param.as_double();
+      std::lock_guard<std::mutex> lock(m_device_time_mutex);
+      m_device_time_tracker.setWindow(m_config.m_device_time_window);
     } else {
       throw std::runtime_error("Parameter is not dynamic reconfigurable");
     }
@@ -158,6 +165,32 @@ void SickSafetyscanners::stopCommunication() {
   m_diagnostic_updater.reset();
 }
 
+rclcpp::Time SickSafetyscanners::scanStamp(
+    const sick::datastructure::Data &data, const rclcpp::Time &now) {
+  if (!m_config.m_use_device_time) {
+    return now;
+  }
+  const auto header = data.getDataHeaderPtr();
+  if (!header || header->isEmpty()) {
+    return now;
+  }
+  const double device_s = DeviceTimeTracker::deviceSeconds(
+      header->getTimestampDate(), header->getTimestampTime());
+  double stamp_s;
+  {
+    std::lock_guard<std::mutex> lock(m_device_time_mutex);
+    stamp_s = m_device_time_tracker.stamp(device_s, now.seconds());
+  }
+  // Apply the correction as a duration so the clock type of now is kept and
+  // no precision is lost converting the absolute time through a double.
+  return now - rclcpp::Duration::from_seconds(now.seconds() - stamp_s);
+}
+
+void SickSafetyscanners::resetDeviceTime() {
+  std::lock_guard<std::mutex> lock(m_device_time_mutex);
+  m_device_time_tracker.reset();
+}
+
 std::string boolToString(bool b) { return b ? "true" : "false"; }
 
 void SickSafetyscanners::sensorDiagnostics(
@@ -192,6 +225,20 @@ void SickSafetyscanners::sensorDiagnostics(
   diagnostic_status.addf("Scan number", "%u", header.scan_number);
   diagnostic_status.addf("Timestamp date", "%u", header.timestamp_date);
   diagnostic_status.addf("Timestamp time", "%u", header.timestamp_time);
+  diagnostic_status.add("Use device time",
+                        boolToString(m_config.m_use_device_time));
+  if (m_config.m_use_device_time) {
+    std::lock_guard<std::mutex> lock(m_device_time_mutex);
+    diagnostic_status.addf("Device time offset [s]", "%.4f",
+                           m_device_time_tracker.offset());
+    diagnostic_status.addf("Device time last delay [ms]", "%.1f",
+                           m_device_time_tracker.lastDelay() * 1e3);
+    diagnostic_status.addf("Device time max delay [ms]", "%.1f",
+                           m_device_time_tracker.maxDelay() * 1e3);
+    diagnostic_status.addf("Device time clock resets", "%lu",
+                           static_cast<unsigned long>(
+                               m_device_time_tracker.clockResets()));
+  }
 
   const sick_safetyscanners2_interfaces::msg::GeneralSystemState &state =
       m_last_raw_msg.general_system_state;

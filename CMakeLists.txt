@@ -41,7 +41,8 @@ set(dependencies
 add_library(sick_safetyscanners2 SHARED
         src/SickSafetyscanners.cpp
         src/SickSafetyscannersRos2.cpp
-        src/utils/MessageCreator.cpp)
+        src/utils/MessageCreator.cpp
+        src/utils/DeviceTimeTracker.cpp)
 target_link_libraries(sick_safetyscanners2
         sick_safetyscanners_base::sick_safetyscanners_base
         ${Boost_LIBRARIES})
@@ -58,7 +59,8 @@ target_link_libraries(sick_safetyscanners2_node
 add_library(sick_safetyscanners2_lifecycle SHARED
         src/SickSafetyscannersLifeCycle.cpp
         src/SickSafetyscanners.cpp
-        src/utils/MessageCreator.cpp)
+        src/utils/MessageCreator.cpp
+        src/utils/DeviceTimeTracker.cpp)
 target_link_libraries(sick_safetyscanners2_lifecycle
         sick_safetyscanners_base::sick_safetyscanners_base
         ${Boost_LIBRARIES})
@@ -89,6 +91,14 @@ if (BUILD_TESTING)
     # uncomment the line when this package is not in a git repo
     #set(ament_cmake_cpplint_FOUND TRUE)
     ament_lint_auto_find_test_dependencies()
+
+    # Pure C++ unit test of the device time mapping (no ROS, no sensor)
+    find_package(ament_cmake_gtest REQUIRED)
+    ament_add_gtest(test_device_time_tracker
+            test/test_device_time_tracker.cpp
+            src/utils/DeviceTimeTracker.cpp)
+    target_include_directories(test_device_time_tracker PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endif ()
 
 install(
