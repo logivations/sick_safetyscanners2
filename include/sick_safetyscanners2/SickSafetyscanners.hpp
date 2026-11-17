@@ -42,10 +42,12 @@
 #include <sick_safetyscanners2_interfaces/srv/status_overview.hpp>
 
 #include <sick_safetyscanners2/utils/Conversions.h>
+#include <sick_safetyscanners2/utils/DeviceTimeTracker.h>
 #include <sick_safetyscanners2/utils/MessageCreator.h>
 
 #include <rclcpp/rclcpp.hpp>
 
+#include <mutex>
 #include <string>
 
 namespace sick {
@@ -84,6 +86,9 @@ public:
     bool m_use_sick_angles;
     float m_angle_offset = -90.0;
     bool m_use_pers_conf = false;
+    /*!< stamp scans with the sensor's measurement time mapped to host time */
+    bool m_use_device_time = false;
+    double m_device_time_window = 30.0; /*!< seconds, see DeviceTimeTracker */
 
     sick::types::port_t m_tcp_port = 2122;
 
@@ -127,6 +132,8 @@ public:
     node.template declare_parameter<bool>("use_persistent_config", false);
     node.template declare_parameter<float>("min_intensities", 0.f);
     node.template declare_parameter<bool>("publish_intensities", true);
+    node.template declare_parameter<bool>("use_device_time", false);
+    node.template declare_parameter<double>("device_time_window", 30.0);
 
     node.template declare_parameter<double>("expected_frequency", 34);
     node.template declare_parameter<double>("frequency_tolerance", 0.1);
@@ -256,6 +263,17 @@ public:
     RCLCPP_INFO(getLogger(), "publish_intensities: %s",
                 btoa(m_config.m_publish_intensities).c_str());
 
+    node.template get_parameter<bool>("use_device_time",
+                                      m_config.m_use_device_time);
+    RCLCPP_INFO(getLogger(), "use_device_time: %s",
+                btoa(m_config.m_use_device_time).c_str());
+
+    node.template get_parameter<double>("device_time_window",
+                                        m_config.m_device_time_window);
+    RCLCPP_INFO(getLogger(), "device_time_window: %f",
+                m_config.m_device_time_window);
+    m_device_time_tracker.setWindow(m_config.m_device_time_window);
+
     node.template get_parameter<double>("expected_frequency",
                                         m_config.m_expected_frequency);
     RCLCPP_INFO(getLogger(), "expected_frequency: %f",
@@ -336,6 +354,27 @@ public:
    * Stop the sensor communication
    */
   void stopCommunication();
+
+  /**
+   * Header stamp for the scan in data.
+   *
+   * With use_device_time the scan is stamped with the sensor's own time stamp
+   * (first beam of the scan) mapped onto host time by m_device_time_tracker,
+   * so a delayed UDP callback no longer shifts the stamp. Otherwise, or when
+   * the packet carries no data header, it is the receive time (upstream
+   * behaviour). time_offset is added by the MessageCreator in both cases.
+   *
+   * @param data Received sensor data
+   * @param now  Host time at which the packet is processed
+   */
+  rclcpp::Time scanStamp(const sick::datastructure::Data &data,
+                         const rclcpp::Time &now);
+
+  /** Drop the device time mapping, e.g. after reconnecting to the sensor. */
+  void resetDeviceTime();
+
+  std::mutex m_device_time_mutex;
+  DeviceTimeTracker m_device_time_tracker;
 
   // Diagnostics
   sick_safetyscanners2_interfaces::msg::RawMicroScanData m_last_raw_msg;
